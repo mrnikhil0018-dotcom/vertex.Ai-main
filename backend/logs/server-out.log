@@ -1,0 +1,6 @@
+
+> vertex-ai-backend@1.0.0 start
+> node src/server.js
+
+Supabase connected
+Vertex AI backend running on http://0.0.0.0:5000

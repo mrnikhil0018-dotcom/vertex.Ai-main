@@ -1,0 +1,31 @@
+buildscript {
+    ext {
+        buildToolsVersion = "34.0.0"
+        minSdkVersion = 24
+        compileSdkVersion = 34
+        targetSdkVersion = 34
+        ndkVersion = "26.1.10909125"
+        kotlinVersion = "1.9.22"
+    }
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+
+apply plugin: "com.facebook.react.rootproject"
+
+def vertexBuildRoot = providers.gradleProperty("vertexBuildRoot")
+    .orElse(providers.environmentVariable("VERTEX_ANDROID_BUILD_DIR"))
+    .orElse("${System.getProperty("user.home")}/Downloads/VertexAI-Gradle-Build")
+    .get()
+
+allprojects { project ->
+    def safeProjectName = project.path == ":" ? "root" : project.path.substring(1).replace(":", "_")
+    project.layout.buildDirectory.set(file("${vertexBuildRoot}/${safeProjectName}"))
+}
