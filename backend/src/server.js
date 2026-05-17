@@ -9,6 +9,23 @@ const {healthCheck} = require('./services/supabaseDb');
 const app = express();
 const port = process.env.PORT || 5000;
 
+const describeError = error => {
+  if (!error) {
+    return 'Unknown error';
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  return (
+    error.message ||
+    error.error_description ||
+    error.details ||
+    error.hint ||
+    error.code ||
+    JSON.stringify(error)
+  );
+};
+
 app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json({limit: '1mb'}));
@@ -27,7 +44,7 @@ app.get('/api/health', async (req, res) => {
       ok: true,
       app: 'Vertex AI Backend',
       database: 'not_ready',
-      warning: error.message,
+      warning: describeError(error),
     });
   }
 });
