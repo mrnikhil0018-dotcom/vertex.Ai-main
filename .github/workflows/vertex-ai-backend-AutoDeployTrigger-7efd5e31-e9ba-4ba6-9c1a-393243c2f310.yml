@@ -1,49 +1,58 @@
-name: Trigger auto deployment for vertex-ai-backend
+name: Deploy vertex-ai-backend
 
-# When this action will be executed
 on:
-  # Automatically trigger it when detected changes in repo
   push:
-    branches: 
-      [ main ]
+    branches:
+      - main
     paths:
-    - '**'
-    - '.github/workflows/vertex-ai-backend-AutoDeployTrigger-7efd5e31-e9ba-4ba6-9c1a-393243c2f310.yml'
+      - Dockerfile
+      - .dockerignore
+      - backend/**
+      - .github/workflows/vertex-ai-backend-AutoDeployTrigger-7efd5e31-e9ba-4ba6-9c1a-393243c2f310.yml
+  workflow_dispatch:
 
-  # Allow manual trigger 
-  workflow_dispatch:      
+env:
+  CONTAINER_APP_NAME: vertex-ai-backend
+  RESOURCE_GROUP: vertex-ai-rg
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/vertex-ai-backend:${{ github.sha }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    permissions: 
-      id-token: write #This is required for requesting the OIDC JWT Token
-      contents: read #Required when GH token is used to authenticate with private repo
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
 
     steps:
-      - name: Checkout to the branch
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Azure Login
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_NAME }}
+
+      - name: Azure login
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.VERTEXAIBACKEND_AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.VERTEXAIBACKEND_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.VERTEXAIBACKEND_AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push container image to registry
+      - name: Deploy image to Azure Container Apps
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
-          registryUrl: 
-          registryUsername: ${{ secrets.VERTEXAIBACKEND_REGISTRY_USERNAME }}
-          registryPassword: ${{ secrets.VERTEXAIBACKEND_REGISTRY_PASSWORD }}
-          containerAppName: vertex-ai-backend
-          resourceGroup: vertex-ai-rg
-          imageToBuild: default/[parameters('containerAppName')]:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
-
-
+          imageToDeploy: ${{ env.IMAGE_NAME }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
