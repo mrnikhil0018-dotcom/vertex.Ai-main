@@ -128,7 +128,7 @@ export const callChat = async ({
   const data = await apiRequest('/chat', {
     method: 'POST',
     body: {history, systemPrompt, provider},
-    timeout: 60000,
+    timeout: 25000,
   });
   return {
     reply: data.reply || 'Response empty raha. Dobara try karo.',

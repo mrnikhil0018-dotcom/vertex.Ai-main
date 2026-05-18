@@ -626,7 +626,7 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
             time: timeString(),
           },
         ]);
-      }, 75000);
+      }, 30000);
       try {
         const result = await callChat({
           history: withUser,
