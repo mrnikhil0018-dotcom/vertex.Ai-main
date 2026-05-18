@@ -1,5 +1,6 @@
-import {getToken} from '../utils/storage';
+import {clearAuth, getToken} from '../utils/storage';
 import {API_BASE_URLS, IS_CLOUD_BACKEND_CONFIGURED} from '../backendConfig';
+import {emitEvent} from '../utils/events';
 
 let cachedBaseUrl = API_BASE_URLS[0];
 
@@ -53,11 +54,27 @@ export const apiRequest = async (path, options = {}) => {
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.message || `Request failed (${response.status})`);
+        const message = data.message || `Request failed (${response.status})`;
+        if (
+          response.status === 401 &&
+          /invalid session|login required|user not found|expired/i.test(message)
+        ) {
+          await clearAuth();
+          emitEvent('auth:expired');
+          const sessionError = new Error(
+            'Session expired ho gaya. Login dobara karo.',
+          );
+          sessionError.code = 'AUTH_EXPIRED';
+          throw sessionError;
+        }
+        throw new Error(message);
       }
       cachedBaseUrl = baseUrl;
       return data;
     } catch (error) {
+      if (error.code === 'AUTH_EXPIRED') {
+        throw error;
+      }
       lastError = error;
     }
   }
@@ -106,6 +123,14 @@ export const socialLoginUser = ({provider, name, email, providerId}) =>
   apiRequest('/auth/social', {
     method: 'POST',
     body: {provider, name, email, providerId},
+  });
+
+export const exchangeSupabaseSession = ({accessToken}) =>
+  apiRequest('/auth/supabase/session', {
+    method: 'POST',
+    headers: {Authorization: `Bearer ${accessToken}`},
+    body: {accessToken},
+    timeout: 18000,
   });
 
 export const buildSystemPrompt = (

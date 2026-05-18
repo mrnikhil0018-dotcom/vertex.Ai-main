@@ -7,6 +7,7 @@ const auth = require('../middleware/auth');
 const {
   createUser,
   findUserByEmail,
+  findOrCreateSupabaseAuthUser,
   upsertSocialUser,
 } = require('../services/supabaseDb');
 
@@ -335,6 +336,31 @@ router.post('/social', async (req, res) => {
     res.json({token: signToken(user), user: publicUser(user)});
   } catch (error) {
     res.status(500).json({message: error.message});
+  }
+});
+
+router.post('/supabase/session', async (req, res) => {
+  try {
+    const header = req.headers.authorization || '';
+    const headerToken = header.startsWith('Bearer ') ? header.slice(7) : '';
+    const accessToken = req.body.accessToken || headerToken;
+    if (!accessToken) {
+      return res.status(400).json({message: 'Supabase access token required'});
+    }
+
+    const user = await findOrCreateSupabaseAuthUser(accessToken);
+    if (!user) {
+      return res.status(401).json({message: 'Invalid Supabase session'});
+    }
+
+    res.json({token: signToken(user), user: publicUser(user)});
+  } catch (error) {
+    res.status(401).json({
+      message:
+        error.message?.includes('invalid')
+          ? 'Invalid Supabase session'
+          : error.message || 'Supabase session exchange failed',
+    });
   }
 });
 

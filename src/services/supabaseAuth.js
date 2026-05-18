@@ -1,4 +1,5 @@
 import {SUPABASE_ANON_KEY, SUPABASE_URL} from '../supabaseConfig';
+import {exchangeSupabaseSession} from './api';
 
 const hasSupabaseConfig = () =>
   Boolean(
@@ -52,7 +53,7 @@ const authRequest = async (path, body) => {
   return data;
 };
 
-const mapAuthResult = data => {
+const mapAuthResult = async data => {
   const session = data.session || data;
   const user = data.user || session.user;
   const token = session.access_token;
@@ -66,20 +67,14 @@ const mapAuthResult = data => {
     );
   }
 
-  const metadata = user.user_metadata || {};
-  return {
-    token,
-    user: {
-      id: user.id,
-      name:
-        metadata.full_name ||
-        metadata.name ||
-        user.email?.split('@')[0] ||
-        'User',
-      email: user.email || '',
-      authProvider: 'supabase',
-    },
-  };
+  try {
+    return await exchangeSupabaseSession({accessToken: token});
+  } catch (error) {
+    throw new Error(
+      error.message ||
+        'Supabase login hua, par Vertex backend session create nahi hua.',
+    );
+  }
 };
 
 export const supabaseSignup = ({name, email, password}) =>

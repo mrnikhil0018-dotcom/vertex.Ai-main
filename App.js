@@ -155,6 +155,10 @@ const App = () => {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    const offAuthExpired = onEvent('auth:expired', async () => {
+      await clearAuth();
+      setUser(null);
+    });
     const boot = async () => {
       const [token, storedUser] = await Promise.all([getToken(), getUser()]);
       if (token && storedUser) {
@@ -162,12 +166,22 @@ const App = () => {
         try {
           const session = await apiRequest('/auth/me', {timeout: 2500});
           setUser(session.user || storedUser);
-        } catch {}
+        } catch (error) {
+          if (
+            /session expired|invalid session|login required/i.test(
+              error.message || '',
+            )
+          ) {
+            await clearAuth();
+            setUser(null);
+          }
+        }
       }
       setLoading(false);
       setTimeout(() => setShowSplash(false), 900);
     };
     boot();
+    return offAuthExpired;
   }, []);
 
   if (loading || showSplash) {
