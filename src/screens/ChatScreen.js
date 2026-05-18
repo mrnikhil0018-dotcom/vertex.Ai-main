@@ -429,6 +429,8 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
   const [listening, setListening] = useState(false);
   const chatId = useRef(null);
   const scrollRef = useRef(null);
+  const activeRequestRef = useRef(null);
+  const typingTimerRef = useRef(null);
   const logoPulse = useRef(new Animated.Value(0)).current;
   const selectedModel = 'vertex';
   const modelProfile = modelProfiles.vertex;
@@ -442,6 +444,13 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
       : input.length >= MAX_CHARS * 0.8
       ? styles.counterWarn
       : null;
+
+  const clearTypingWatchdog = useCallback(() => {
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     Tts.setDefaultLanguage('hi-IN').catch(() =>
@@ -468,18 +477,24 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
     ).start();
 
     const offNew = onEvent('chat:new', () => {
+      activeRequestRef.current = null;
+      clearTypingWatchdog();
       setMessages([]);
       chatId.current = null;
       setTyping(false);
     });
     const offSys = onEvent('chat:system', () => setSystemOpen(value => !value));
     const offLoad = onEvent('chat:load', chat => {
+      activeRequestRef.current = null;
+      clearTypingWatchdog();
       setMessages(chat.messages || []);
       chatId.current = chat.id;
       setTyping(false);
     });
     const offDeleted = onEvent('chat:deleted', id => {
       if (chatId.current === id) {
+        activeRequestRef.current = null;
+        clearTypingWatchdog();
         setMessages([]);
         chatId.current = null;
         setTyping(false);
@@ -490,11 +505,13 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
       offSys();
       offLoad();
       offDeleted();
+      clearTypingWatchdog();
+      activeRequestRef.current = null;
       Voice.destroy()
         .then(Voice.removeAllListeners)
         .catch(() => {});
     };
-  }, [logoPulse]);
+  }, [clearTypingWatchdog, logoPulse]);
 
   useEffect(() => {
     setTimeout(() => scrollRef.current?.scrollToEnd({animated: true}), 50);
@@ -590,12 +607,35 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
       setInput('');
       setAttached(null);
       setTyping(true);
+      const requestId = Date.now();
+      activeRequestRef.current = requestId;
+      clearTypingWatchdog();
+      typingTimerRef.current = setTimeout(() => {
+        if (activeRequestRef.current !== requestId) {
+          return;
+        }
+        typingTimerRef.current = null;
+        activeRequestRef.current = null;
+        setTyping(false);
+        setMessages(current => [
+          ...current,
+          {
+            role: 'assistant',
+            content:
+              '**Timeout:** Backend se response nahi aaya. Internet/backend check karke dobara try karo.',
+            time: timeString(),
+          },
+        ]);
+      }, 75000);
       try {
         const result = await callChat({
           history: withUser,
           systemPrompt: buildSystemPrompt(systemPrompt.trim()),
           provider: 'vertex',
         });
+        if (activeRequestRef.current !== requestId) {
+          return;
+        }
         const aiMessage = {
           role: 'assistant',
           content: result.reply,
@@ -609,6 +649,9 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
           Tts.speak(result.reply.replace(/[*_`#>]/g, '').slice(0, 900));
         }
       } catch (error) {
+        if (activeRequestRef.current !== requestId) {
+          return;
+        }
         const aiMessage = {
           role: 'assistant',
           content: `**Error:** ${error.message}`,
@@ -616,10 +659,23 @@ const ChatScreen = ({user, voiceOutput, themeMode = 'dark'}) => {
         };
         setMessages([...withUser, aiMessage]);
       } finally {
-        setTyping(false);
+        if (activeRequestRef.current === requestId) {
+          activeRequestRef.current = null;
+          clearTypingWatchdog();
+          setTyping(false);
+        }
       }
     },
-    [attached, input, messages, persistChat, systemPrompt, typing, voiceOutput],
+    [
+      attached,
+      clearTypingWatchdog,
+      input,
+      messages,
+      persistChat,
+      systemPrompt,
+      typing,
+      voiceOutput,
+    ],
   );
 
   const emptyLogoScale = logoPulse.interpolate({

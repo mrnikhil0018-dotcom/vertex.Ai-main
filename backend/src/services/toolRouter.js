@@ -3,23 +3,7 @@ const {
   buildProjectPrompt,
   projectSystemPrompt,
 } = require('./projectBuilder');
-
-const ratioSize = ratio => {
-  if (ratio === 'portrait') {
-    return {width: 768, height: 1365};
-  }
-  if (ratio === 'landscape') {
-    return {width: 1365, height: 768};
-  }
-  return {width: 1024, height: 1024};
-};
-
-const imageUrlForPrompt = ({prompt, ratio = 'square'}) => {
-  const {width, height} = ratioSize(ratio);
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(
-    prompt,
-  )}?width=${width}&height=${height}&nologo=true&enhance=true`;
-};
+const {generateImage, generateVideoPackage} = require('./mediaProviders');
 
 const latestUserText = history =>
   [...(Array.isArray(history) ? history : [])]
@@ -224,15 +208,25 @@ async function runChatTool({history, systemPrompt, provider}) {
     const finalPrompt =
       prompt ||
       'A premium futuristic AI assistant scene, dark background, cyan and gold light, highly detailed 3D render';
+    const image = generateImage({
+      prompt: finalPrompt,
+      ratio,
+      provider: 'pollinations',
+    });
     return {
       reply: responseIntro(type),
-      tool: {
-        type,
-        title: typeTitles[type],
-        prompt: finalPrompt,
-        url: imageUrlForPrompt({prompt: finalPrompt, ratio}),
-        ratio,
-      },
+      tool: image,
+    };
+  }
+
+  if (type === 'video') {
+    const video = await generateVideoPackage({
+      prompt: userText,
+      provider,
+    });
+    return {
+      reply: responseIntro(type),
+      tool: video,
     };
   }
 

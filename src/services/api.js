@@ -5,19 +5,37 @@ let cachedBaseUrl = API_BASE_URLS[0];
 
 const timeoutFetch = (url, options = {}, timeout = 12000) => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-  return fetch(url, {...options, signal: controller.signal}).finally(() =>
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      const error = new Error('Request timeout');
+      error.name = 'AbortError';
+      reject(error);
+    }, timeout);
+  });
+  const requestPromise = fetch(url, {...options, signal: controller.signal});
+  return Promise.race([requestPromise, timeoutPromise]).finally(() =>
     clearTimeout(timer),
   );
+};
+
+const uniqueUrls = urls => [...new Set(urls.filter(Boolean))];
+
+const requestUrls = () => {
+  if (IS_CLOUD_BACKEND_CONFIGURED) {
+    return uniqueUrls([API_BASE_URLS[0]]);
+  }
+  return uniqueUrls([
+    cachedBaseUrl,
+    ...API_BASE_URLS.filter(baseUrl => baseUrl !== cachedBaseUrl),
+  ]);
 };
 
 export const apiRequest = async (path, options = {}) => {
   const token = await getToken();
   let lastError;
-  const urls = [
-    cachedBaseUrl,
-    ...API_BASE_URLS.filter(baseUrl => baseUrl !== cachedBaseUrl),
-  ];
+  const urls = requestUrls();
   for (const baseUrl of urls) {
     try {
       const response = await timeoutFetch(
@@ -56,10 +74,7 @@ export const apiRequest = async (path, options = {}) => {
 };
 
 export const resolveApiBaseUrl = async () => {
-  const urls = [
-    cachedBaseUrl,
-    ...API_BASE_URLS.filter(baseUrl => baseUrl !== cachedBaseUrl),
-  ];
+  const urls = requestUrls();
   for (const baseUrl of urls) {
     try {
       const response = await timeoutFetch(`${baseUrl}/health`, {}, 3500);
@@ -141,6 +156,47 @@ export const generateToolContent = async (prompt, provider = 'vertex') => {
   });
   return data.output || 'Output empty raha. Dobara try karo.';
 };
+
+export const generateTool = async (body, provider = 'vertex') =>
+  apiRequest('/tools/generate', {
+    method: 'POST',
+    body: {...body, provider},
+    timeout:
+      body.type === 'image'
+        ? 25000
+        : body.type === 'website' ||
+          body.type === 'app' ||
+          body.action === 'refine'
+        ? 120000
+        : 60000,
+  });
+
+export const generateMediaImage = async ({
+  prompt,
+  style = 'No Style',
+  ratio = 'square',
+  provider = 'vertex',
+}) => {
+  const data = await generateTool(
+    {
+      type: 'image',
+      prompt,
+      style,
+      ratio,
+    },
+    provider,
+  );
+  if (!data.tool?.url) {
+    throw new Error('Image URL empty raha.');
+  }
+  return data.tool;
+};
+
+export const getMediaProviders = () =>
+  apiRequest('/media/providers', {
+    method: 'GET',
+    timeout: 12000,
+  });
 
 export const imageUrlForPrompt = ({prompt, width, height}) =>
   `https://image.pollinations.ai/prompt/${encodeURIComponent(

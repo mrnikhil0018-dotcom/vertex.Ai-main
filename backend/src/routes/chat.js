@@ -9,12 +9,21 @@ const {
   buildToolRefinePrompt,
   projectSystemPrompt,
 } = require('../services/projectBuilder');
+const {
+  generateImage,
+  generateVideoPackage,
+  listMediaProviders,
+} = require('../services/mediaProviders');
 
 const router = express.Router();
 
 router.get('/chats', auth, async (req, res) => {
   const chats = await listChats(req.user.id);
   res.json({chats});
+});
+
+router.get('/media/providers', auth, (req, res) => {
+  res.json(listMediaProviders());
 });
 
 router.post('/chat', auth, async (req, res) => {
@@ -55,6 +64,25 @@ router.post('/chat', auth, async (req, res) => {
 router.post('/tools/generate', auth, async (req, res) => {
   try {
     const type = String(req.body.type || '').toLowerCase();
+    if (type === 'image') {
+      return res.json({
+        output: '',
+        tool: generateImage({
+          prompt: req.body.prompt || req.body.description || '',
+          style: req.body.style || req.body.imageStyle || 'No Style',
+          ratio: req.body.ratio || 'square',
+        }),
+      });
+    }
+    if (type === 'video' && req.body.render === true) {
+      const video = await generateVideoPackage({
+        prompt: req.body.prompt || req.body.description || '',
+        style: req.body.style || req.body.videoStyle || 'Cinematic',
+        duration: req.body.duration || '30s',
+        provider: req.body.provider || 'vertex',
+      });
+      return res.json({output: video.output, tool: video});
+    }
     const isProject = ['website', 'app'].includes(type);
     const isRefine = req.body.action === 'refine';
     const prompt = isRefine

@@ -31,7 +31,7 @@ import {
   Wand2,
   X,
 } from 'lucide-react-native';
-import {generateToolContent, imageUrlForPrompt} from '../services/api';
+import {generateMediaImage, generateToolContent} from '../services/api';
 import {emitEvent} from '../utils/events';
 import {
   extractPreviewHtml,
@@ -210,16 +210,6 @@ const optionSets = {
     'Lofi',
   ],
   mood: ['Happy', 'Sad', 'Energetic', 'Romantic', 'Motivational', 'Chill'],
-};
-
-const ratioSize = ratio => {
-  if (ratio === 'Portrait 9:16') {
-    return {width: 768, height: 1365};
-  }
-  if (ratio === 'Landscape 16:9' || ratio === 'Wide 16:9 HD') {
-    return {width: 1365, height: 768};
-  }
-  return {width: 1024, height: 1024};
 };
 
 const Select = ({label, options, value, onChange}) => (
@@ -511,18 +501,29 @@ const ToolsScreen = ({selectedModel = 'vertex', themeMode = 'dark'}) => {
     }
   };
 
-  const generateImage = () => {
+  const generateImage = async () => {
     if (!form.imagePrompt.trim()) {
       emitEvent('toast', 'Prompt daalo');
       return;
     }
-    const {width, height} = ratioSize(form.ratio);
-    const styled = `${form.imagePrompt}. Style: ${form.imageStyle}`;
-    setImageUrl(imageUrlForPrompt({prompt: styled, width, height}));
-    setOutput(styled);
-    setProject(null);
-    setRefineMessages([]);
-    setRefineInput('');
+    setLoading(true);
+    try {
+      const image = await generateMediaImage({
+        prompt: form.imagePrompt,
+        style: form.imageStyle,
+        ratio: form.ratio,
+        provider: selectedModel,
+      });
+      setImageUrl(image.url);
+      setOutput(image.prompt);
+      setProject(null);
+      setRefineMessages([]);
+      setRefineInput('');
+    } catch (error) {
+      emitEvent('toast', error.message || 'Image generate nahi hui');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetToolState = () => {
@@ -543,16 +544,31 @@ const ToolsScreen = ({selectedModel = 'vertex', themeMode = 'dark'}) => {
     setRefineInput('');
 
     if (active === 'image') {
-      const {width, height} = ratioSize(form.ratio);
       const basePrompt =
         output || `${form.imagePrompt}. Style: ${form.imageStyle}`;
       const nextPrompt = `${basePrompt}. Apply this change: ${instruction}. Keep the same overall subject and composition unless the change asks otherwise.`;
-      setOutput(nextPrompt);
-      setImageUrl(imageUrlForPrompt({prompt: nextPrompt, width, height}));
-      setRefineMessages(current => [
-        ...current,
-        {role: 'assistant', text: 'Image update ho gayi.'},
-      ]);
+      setRefining(true);
+      try {
+        const image = await generateMediaImage({
+          prompt: nextPrompt,
+          style: 'No Style',
+          ratio: form.ratio,
+          provider: selectedModel,
+        });
+        setOutput(image.prompt);
+        setImageUrl(image.url);
+        setRefineMessages(current => [
+          ...current,
+          {role: 'assistant', text: 'Image update ho gayi.'},
+        ]);
+      } catch (error) {
+        setRefineMessages(current => [
+          ...current,
+          {role: 'assistant', text: error.message || 'Image update failed.'},
+        ]);
+      } finally {
+        setRefining(false);
+      }
       return;
     }
 
